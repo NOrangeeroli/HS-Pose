@@ -5,8 +5,8 @@ import absl.flags as flags
 # datasets
 flags.DEFINE_integer('obj_c', 6, 'number of categories')
 flags.DEFINE_string('dataset', 'Real', 'CAMERA or CAMERA+Real')
-flags.DEFINE_string('dataset_dir', './data/NOCS', 'path to the dataset')
-flags.DEFINE_string('detection_dir', './data/segmentation_results', 'path to detection results')
+flags.DEFINE_string('dataset_dir', '../../data/NOCS', 'path to the dataset')
+flags.DEFINE_string('detection_dir', '../../data/NOCS/detection', 'path to detection results')
 flags.DEFINE_string('per_obj', '', 'only train an specified object')
 
 # dynamic zoom in

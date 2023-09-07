@@ -84,7 +84,6 @@ class FaceRecon(nn.Module):
 
         one_hot = torch.zeros(bs, FLAGS.obj_c).to(cat_id.device).scatter_(1, obj_idh.long(), 1)
         # bs x verticenum x 6
-
         # ss = time.time()
         fm_0 = F.relu(self.conv_0(vertices, self.neighbor_num), inplace=True)
         fm_1 = F.relu(self.bn1(self.conv_1(vertices, fm_0, self.neighbor_num).transpose(1, 2)).transpose(1, 2), inplace=True)

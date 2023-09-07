@@ -10,7 +10,7 @@ FLAGS = flags.FLAGS
 class Rot_green(nn.Module):
     def __init__(self):
         super(Rot_green, self).__init__()
-        self.f = FLAGS.feat_c_R
+        self.f = FLAGS.feat_c_R+384
         self.k = FLAGS.R_c
 
         self.conv1 = torch.nn.Conv1d(self.f, 1024, 1)
@@ -42,7 +42,7 @@ class Rot_green(nn.Module):
 class Rot_red(nn.Module):
     def __init__(self):
         super(Rot_red, self).__init__()
-        self.f = FLAGS.feat_c_R
+        self.f = FLAGS.feat_c_R+384
         self.k = FLAGS.R_c
 
         self.conv1 = torch.nn.Conv1d(self.f, 1024, 1)

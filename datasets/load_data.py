@@ -17,7 +17,20 @@ import torchvision.transforms as transforms
 from tools.eval_utils import load_depth, get_bbox
 from tools.dataset_utils import *
 
+# torch.hub.set_dir('/media/student/Elements/tmp/')
 
+# device = torch.device("cpu")
+# dinov2_vits14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14').to(device)
+
+# def dinov2_features(rgb):
+#     transformation = transforms.Compose([
+#         transforms.Resize(256),
+#         transforms.CenterCrop(224),
+#         transforms.ToTensor(),
+#         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+#     ])
+#     rgb = transformation(rgb)
+#     return dinov2_vits14(rgb.to(device)).detatch()
 class PoseDataset(data.Dataset):
     def __init__(self, source=None, mode='train', data_dir=None,
                  n_pts=1024, img_size=256, per_obj=''):
@@ -151,10 +164,18 @@ class PoseDataset(data.Dataset):
         print('{} images found.'.format(self.length))
         print('{} models loaded.'.format(len(self.models)))
 
+        self.transformation = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ])
+
     def __len__(self):
         return FLAGS.train_steps * FLAGS.batch_size 
-
+    
     def __getitem__(self, index):
+        # import pdb;pdb.set_trace()
         if self.source == 'CAMERA+Real':
             camera_len = self.subset_len[0]
             cam_pro = 0.75
@@ -194,15 +215,21 @@ class PoseDataset(data.Dataset):
             mug_handle = self.mug_sym[scene_label][img_id]
         else:
             mug_handle = 1
+        
+        rgb_i = Image.open(img_path + '_color.png').convert("RGB")
 
         rgb = cv2.imread(img_path + '_color.png')
+        
+        
+
+
         if rgb is not None:
             rgb = rgb[:, :, :3]
         else:
             return self.__getitem__((index + 1) % self.__len__())
-
+        
         im_H, im_W = rgb.shape[0], rgb.shape[1]
-        coord_2d = get_2d_coord_np(im_W, im_H).transpose(1, 2, 0)
+        coord_2d = get_2d_coord_np(im_W, im_H).transpose(1, 2, 0) # HxWx2
 
         depth_path = img_path + '_depth.png'
         if os.path.exists(depth_path):
@@ -247,7 +274,7 @@ class PoseDataset(data.Dataset):
         roi_depth = crop_resize_by_warp_affine(
             depth, bbox_center, scale, FLAGS.img_size, interpolation=cv2.INTER_NEAREST
         )
-
+        
         roi_depth = np.expand_dims(roi_depth, axis=0)
         # normalize depth
         depth_valid = roi_depth > 0
@@ -271,19 +298,31 @@ class PoseDataset(data.Dataset):
         translation = gts['translations'][idx]
         # add nnoise to roi_mask
         roi_mask_def = defor_2D(roi_mask, rand_r=FLAGS.roi_mask_r, rand_pro=FLAGS.roi_mask_pro)
-
-        pcl_in = self._depth_to_pcl(roi_depth, out_camK, roi_coord_2d, roi_mask_def) / 1000.0
-        if len(pcl_in) < 50:
+        # import pdb;pdb.set_trace()
+        
+        
+        pcl_in_coord2d = self._depth_to_pcl_2dcoord(roi_depth, out_camK, roi_coord_2d, roi_mask_def) 
+        
+        
+        
+        if len(pcl_in_coord2d) < 50:
             return self.__getitem__((index + 1) % self.__len__())
-        pcl_in = self._sample_points(pcl_in, FLAGS.random_points)
+        pcl_in_coord2d = self._sample_points(pcl_in_coord2d, FLAGS.random_points)
+        pcl_in = pcl_in_coord2d[:,:3]/1000.0
+        pcl_coord2d = pcl_in_coord2d[:,3:]
+        
         # sym
         sym_info = self.get_sym_info(self.id2cat_name[str(cat_id + 1)], mug_handle=mug_handle)
         # generate augmentation parameters
         bb_aug, rt_aug_t, rt_aug_R = self.generate_aug_parameters()
-
-
+        
+        rgb_t = self.transformation(rgb_i)
+        
+       
         data_dict = {}
         data_dict['pcl_in'] = torch.as_tensor(pcl_in.astype(np.float32)).contiguous()
+        data_dict['pcl_coor2d'] = torch.as_tensor(pcl_coord2d.astype(np.int32)).contiguous()
+        data_dict['rgb'] = torch.as_tensor(rgb_t).contiguous()
         data_dict['cat_id'] = torch.as_tensor(cat_id, dtype=torch.float32).contiguous()
         data_dict['rotation'] = torch.as_tensor(rotation, dtype=torch.float32).contiguous()
         data_dict['translation'] = torch.as_tensor(translation, dtype=torch.float32).contiguous()
@@ -330,6 +369,18 @@ class PoseDataset(data.Dataset):
         real_x = (x_map - cx) * depth / fx
         real_y = (y_map - cy) * depth / fy
         pcl = np.stack((real_x, real_y, depth), axis=-1)
+        return pcl.astype(np.float32)
+    def _depth_to_pcl_2dcoord(self, depth, K, xymap, mask):
+        K = K.reshape(-1)
+        cx, cy, fx, fy = K[2], K[5], K[0], K[4]
+        depth = depth.reshape(-1).astype(np.float)
+        valid = ((depth > 0) * mask.reshape(-1)) > 0
+        depth = depth[valid]
+        x_map = xymap[0].reshape(-1)[valid]
+        y_map = xymap[1].reshape(-1)[valid]
+        real_x = (x_map - cx) * depth / fx
+        real_y = (y_map - cy) * depth / fy
+        pcl = np.stack((real_x, real_y, depth, x_map, y_map), axis=-1)
         return pcl.astype(np.float32)
     def generate_aug_parameters(self, s_x=(0.8, 1.2), s_y=(0.8, 1.2), s_z=(0.8, 1.2), ax=50, ay=50, az=50, a=15):
         # for bb aug

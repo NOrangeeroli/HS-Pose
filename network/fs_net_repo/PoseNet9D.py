@@ -4,6 +4,7 @@ import absl.flags as flags
 from absl import app
 import numpy as np
 import torch.nn.functional as F
+import time
 
 from network.fs_net_repo.PoseR import Rot_red, Rot_green
 from network.fs_net_repo.PoseTs import Pose_Ts
@@ -20,10 +21,12 @@ class PoseNet9D(nn.Module):
         self.face_recon = FaceRecon()
         self.ts = Pose_Ts()
 
-    def forward(self, points, obj_id):
+    def forward(self, points,features, obj_id):
+        
+        
         bs, p_num = points.shape[0], points.shape[1]
         recon, face, feat = self.face_recon(points - points.mean(dim=1, keepdim=True), obj_id)
-
+        #import pdb;pdb.set_trace()
         if FLAGS.train:
             recon = recon + points.mean(dim=1, keepdim=True)
             # handle face
@@ -33,6 +36,7 @@ class PoseNet9D(nn.Module):
             face_f = F.sigmoid(face[:, :, 24:])  # bs x num x 6
         else:
             face_normal, face_dis, face_f, recon = [None]*4
+        feat = torch.cat([feat,features],axis = -1)
         #  rotation
         green_R_vec = self.rot_green(feat.permute(0, 2, 1))  # b x 4
         red_R_vec = self.rot_red(feat.permute(0, 2, 1))   # b x 4
@@ -48,6 +52,7 @@ class PoseNet9D(nn.Module):
         T, s = self.ts(feat_for_ts.permute(0, 2, 1))
         Pred_T = T + points.mean(dim=1)  # bs x 3
         Pred_s = s  # this s is not the object size, it is the residual
+        
 
         return recon, face_normal, face_dis, face_f, p_green_R, p_red_R, f_green_R, f_red_R, Pred_T, Pred_s
 

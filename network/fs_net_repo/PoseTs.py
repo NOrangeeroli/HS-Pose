@@ -12,7 +12,7 @@ FLAGS = flags.FLAGS
 class Pose_Ts(nn.Module):
     def __init__(self):
         super(Pose_Ts, self).__init__()
-        self.f = FLAGS.feat_c_ts
+        self.f = FLAGS.feat_c_ts+384
         self.k = FLAGS.Ts_c
 
         self.conv1 = torch.nn.Conv1d(self.f, 1024, 1)

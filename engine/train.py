@@ -1,6 +1,6 @@
 import os
 import random
-
+import time
 import math
 import torch
 from absl import app
@@ -8,6 +8,7 @@ from absl import app
 from config.config import *
 from tools.training_utils import build_lr_rate, build_optimizer
 from network.HSPose import HSPose 
+from network.dinov2 import DinoV2
 
 FLAGS = flags.FLAGS
 from datasets.load_data import PoseDataset
@@ -41,7 +42,10 @@ def train(argv):
         logger.info(key + ':' + str(value))
     Train_stage = 'PoseNet_only'
     network = HSPose(Train_stage)
+    dinov2 = DinoV2()
+    dinov2.eval()
     network = network.to(device)
+    dinov2 = dinov2.to(device)
     train_steps = FLAGS.train_steps    
     #  build optimizer
     param_list = network.build_params(training_stage_freeze=[])
@@ -72,10 +76,24 @@ def train(argv):
     for epoch in range(s_epoch, FLAGS.total_epoch):
         i = 0
         for data in tqdm(train_dataloader, desc=f'Training {epoch}/{FLAGS.total_epoch}', dynamic_ncols=True):
+            
+            PC = data['pcl_in'].to(device)
+            coord_2d = data['pcl_coor2d'].to(device)
+            rgb = data['rgb'].to(device)
+            #import pdb;pdb.set_trace()
+            with torch.no_grad():
+                dinov2_feature = dinov2(rgb)
+            
+            PC_feature = torch.stack([torch.stack([f[:,point[1].long(),point[0].long()] for point in co]) for f , co in zip(dinov2_feature, coord_2d)])
+            
+            #PC = torch.cat([PC,PC_feature],axis = -1)
+            #import pdb;pdb.set_trace()
+  
             output_dict, loss_dict \
                 = network(
                           obj_id=data['cat_id'].to(device), 
-                          PC=data['pcl_in'].to(device), 
+                          PC=PC, 
+                          PC_feature = PC_feature,
                           gt_R=data['rotation'].to(device), 
                           gt_t=data['translation'].to(device),
                           gt_s=data['fsnet_scale'].to(device), 
@@ -102,6 +120,7 @@ def train(argv):
                 global_step += 1
                 continue
             # backward
+            
             if global_step % FLAGS.accumulate == 0:
                 total_loss.backward()
                 torch.nn.utils.clip_grad_norm_(network.parameters(), 5)
@@ -115,7 +134,7 @@ def train(argv):
             if i % FLAGS.log_every == 0:
                 write_to_summary(tb_writter, optimizer, total_loss, fsnet_loss, prop_loss, recon_loss, global_step)
             i += 1
-
+            
         # save model
         if (epoch + 1) % FLAGS.save_every == 0 or (epoch + 1) == FLAGS.total_epoch:
             torch.save(

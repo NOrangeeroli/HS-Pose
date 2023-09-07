@@ -18,6 +18,7 @@ from losses.prop_loss import prop_rot_loss
 from engine.organize_loss import control_loss
 from tools.training_utils import get_gt_v
 from tools.lynne_lib.vision_utils import show_point_cloud
+import time
 
 
 class HSPose(nn.Module):
@@ -32,11 +33,11 @@ class HSPose(nn.Module):
         self.name_fs_list, self.name_recon_list, \
             self.name_geo_list, self.name_prop_list = control_loss(self.train_stage)
 
-    def forward(self, PC=None, depth=None, obj_id=None, camK=None,
+    def forward(self, PC=None, PC_feature = None, depth=None, obj_id=None, camK=None,
                 gt_R=None, gt_t=None, gt_s=None, mean_shape=None, gt_2D=None, sym=None, aug_bb=None,
                 aug_rt_t=None, aug_rt_r=None, def_mask=None, model_point=None, nocs_scale=None, do_loss=False):
+        
         output_dict = {}
-
         if PC is None:
             if self.train_stage == 'PoseNet_only':
                 FLAGS.sample_method = 'basic'
@@ -62,7 +63,7 @@ class HSPose(nn.Module):
                 gt_s = gt_s_da
 
         recon, face_normal, face_dis, face_f, p_green_R, p_red_R, f_green_R, f_red_R, \
-        Pred_T, Pred_s = self.posenet(PC, obj_id)
+        Pred_T, Pred_s = self.posenet(PC,PC_feature, obj_id)
 
         output_dict['mask'] = obj_mask
         output_dict['sketch'] = sketch
@@ -179,7 +180,7 @@ class HSPose(nn.Module):
             loss_dict['prop_loss'] = prop_loss
         else:
             return output_dict
-
+        
         return output_dict, loss_dict
 
     def data_augment(self, PC, gt_R, gt_t, gt_s, mean_shape, sym, aug_bb, aug_rt_t, aug_rt_r,
